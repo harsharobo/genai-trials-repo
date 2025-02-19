@@ -1,0 +1,4 @@
+quant_config:
+  load_in_4bit: True
+  load_in_8bit: False
+  bnb_4bit_quant_type: "nf4"
