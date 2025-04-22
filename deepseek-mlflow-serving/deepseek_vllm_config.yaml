@@ -1,3 +1,0 @@
-dtype: bfloat16
-max_model_len: 2048
-tensor_parallel: 1
