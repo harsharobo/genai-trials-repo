@@ -1,0 +1,4 @@
+diffusers
+transformers
+accelerate
+mlflow[databricks]==3.8.0
