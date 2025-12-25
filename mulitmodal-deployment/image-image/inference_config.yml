@@ -1,0 +1,2 @@
+model_type: qwen_image_edit
+use_quantization: false
