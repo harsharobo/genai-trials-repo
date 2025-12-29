@@ -85,6 +85,18 @@ def pil_to_base64(image: Image.Image) -> str:
         logger.error(f"Error converting PIL to base64: {e}")
         raise HTTPException(status_code=500, detail=f"Error encoding image: {str(e)}")
 
+def get_model_endpoint_url() -> str:
+    """Retrieve model endpoint URL from environment variable."""
+    host = os.environ.get("DATABRICKS_HOST")
+    model_endpoint_url = os.getenv("MODEL_ENDPOINT_URL")
+    if not model_endpoint_url or not host:
+        logger.error("MODEL_ENDPOINT_URL and DATABRICKS_HOST environment variables not set")
+        raise HTTPException(
+            status_code=500,
+            detail="MODEL_ENDPOINT_URL and DATABRICKS_HOST environment variables not set"
+        )
+    endpoint_url =f"https://{host}/serving-endpoints/{model_endpoint_url}/invocations"
+    return endpoint_url
 
 @app.get("/api")
 async def root():
@@ -130,12 +142,7 @@ async def predict(request: ImageRequest,
         }
 
         # Get model endpoint URL from environment variable
-        model_endpoint_url = os.getenv("MODEL_ENDPOINT_URL")
-        if not model_endpoint_url:
-            raise HTTPException(
-                status_code=500,
-                detail="MODEL_ENDPOINT_URL environment variable not set"
-            )
+        model_endpoint_url = get_model_endpoint_url()
         # Add authentication token if provided
         auth_token = os.getenv("MODEL_ENDPOINT_TOKEN")
         if x_forwarded_access_token:
