@@ -11,7 +11,7 @@ from mlflow.pyfunc import PythonModel
 from diffusers import QwenImageEditPlusPipeline
 
 # Set up logging
-logging.basicConfig(level=logging.WARNING)
+# logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 def base64_string_to_pillow_image(base64_str):
