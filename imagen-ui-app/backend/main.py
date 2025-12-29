@@ -16,6 +16,8 @@ from pathlib import Path
 import uuid
 import asyncio
 import traceback
+import mlflow
+from mlflow.entities import AssessmentSource
 
 
 logging.basicConfig(level=logging.INFO)
@@ -25,6 +27,15 @@ app = FastAPI(title="Image-to-Image API")
 
 # In-memory job storage
 jobs: Dict[str, Dict] = {}
+
+#setup mlflow
+experiment_id = os.getenv("MLFLOW_EXPERIMENT_ID")
+if not experiment_id:
+    logger.error("MLFLOW_EXPERIMENT_ID environment variable not set")
+    raise AssertionError("MLFLOW_EXPERIMENT_ID environment variable not set")
+
+mlflow.set_tracking_uri("databricks")
+mlflow.set_experiment(experiment_id=experiment_id)
 
 # Get environment (development or production)
 # env = os.getenv("ENV", "development")
@@ -55,6 +66,7 @@ class ImageResponse(BaseModel):
 
 
 class FeedbackRequest(BaseModel):
+    trace_id: str # trace id from the model serving response
     feedback_type: str  # "thumbs_up" or "thumbs_down"
     feedback_text: Optional[str] = None
     session_id: Optional[str] = None
@@ -369,25 +381,33 @@ async def predict(request: ImageRequest,
 
 
 @app.post("/api/feedback", response_model=FeedbackResponse)
-async def submit_feedback(feedback: FeedbackRequest):
+async def submit_feedback(feedback: FeedbackRequest,
+                          x_forwarded_email: Annotated[Union[str, None], Header(alias="X-Forwarded-Email")] = None):
     """
     Store user feedback (thumbs up/down with optional text).
     """
     try:
-        logger.info(f"Received feedback: {feedback.feedback_type}")
+        logger.info(f"Received feedback: {feedback.feedback_type} for trace_id: {feedback.trace_id} from user: {x_forwarded_email}")
 
-        feedback_data = {
-            "timestamp": datetime.now().isoformat(),
-            "feedback_type": feedback.feedback_type,
-            "feedback_text": feedback.feedback_text,
-            "session_id": feedback.session_id,
-            "prompt": feedback.prompt
-        }
-
+        # feedback_data = {
+        #     "timestamp": datetime.now().isoformat(),
+        #     "feedback_type": feedback.feedback_type,
+        #     "feedback_text": feedback.feedback_text,
+        #     "session_id": feedback.session_id,
+        #     "prompt": feedback.prompt
+        # }
         # Store feedback (implement your storage logic here)
         # Options: Database, file, MLflow tracking, etc.
-        with open("feedback_log.json", "a") as f:
-            f.write(json.dumps(feedback_data) + "\n")
+        # with open("feedback_log.json", "a") as f:
+        #     f.write(json.dumps(feedback_data) + "\n")
+        mlflow.log_trace(
+            trace_id=feedback.trace_id,
+            name="user_feedback",
+            value=feedback.feedback_type == "thumbs_up",
+            rationale=feedback.feedback_text,
+            source=AssessmentSource(source_type="HUMAN",
+                                    source_id=x_forwarded_email)   
+        )
 
         logger.info(f"Feedback stored successfully")
 

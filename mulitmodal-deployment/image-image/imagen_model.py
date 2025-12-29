@@ -14,16 +14,6 @@ from diffusers import QwenImageEditPlusPipeline
 # logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
-@mlflow.trace()
-def base64_string_to_pillow_image(base64_str):
-    return Image.open(io.BytesIO(base64.decodebytes(bytes(base64_str, "utf-8"))))
-
-def pillow_image_to_base64_string(img):
-    buffered = io.BytesIO()
-    img.save(buffered, format="PNG")
-    return base64.b64encode(buffered.getvalue()).decode("utf-8")
-
-
 class ImageEditModel(PythonModel):
 
   def __init__(self, model_config=None):
@@ -31,6 +21,24 @@ class ImageEditModel(PythonModel):
       self.model_config = model_config
     else:
       self.model_config = mlflow.models.ModelConfig(development_config="inference_config.yml")
+  
+  @mlflow.trace()
+  def base64_string_to_pillow_image(self, base64_str):
+      return Image.open(io.BytesIO(base64.decodebytes(bytes(base64_str, "utf-8"))))
+
+  @mlflow.trace()
+  def pillow_image_to_base64_string(self, img):
+      buffered = io.BytesIO()
+      img.save(buffered, format="PNG")
+      return base64.b64encode(buffered.getvalue()).decode("utf-8")
+
+  @mlflow.trace()
+  def process_input(self, model_input):
+    input_df = model_input.iloc[0].to_dict()
+    image1 = self.base64_string_to_pillow_image(input_df['image1'])
+    image2 = self.base64_string_to_pillow_image(input_df['image2'])
+    prompt = input_df['prompt']
+    return {"image1": image1, "image2": image2, "prompt": prompt}
 
   def load_context(self, context):
     model_id = context.artifacts['model_path']
@@ -52,12 +60,9 @@ class ImageEditModel(PythonModel):
 
   @mlflow.trace()
   def predict(self, context, model_input, params):
-    input_df = model_input.iloc[0].to_dict()
-
+    
     # Extract images from base64 strings
-    image1 = base64_string_to_pillow_image(input_df['image1'])
-    image2 = base64_string_to_pillow_image(input_df['image2'])
-    prompt = input_df['prompt']
+    input_dict = self.process_input(model_input)
 
     # Get generation parameters
     num_inference_steps = params.get("num_inference_steps", 40)
@@ -68,8 +73,8 @@ class ImageEditModel(PythonModel):
     seed = params.get("seed", 0)
 
     inputs = {
-        "image": [image1, image2],
-        "prompt": prompt,
+        "image": [input_dict["image1"], input_dict["image2"]],
+        "prompt": input_dict["prompt"],
         "generator": torch.manual_seed(seed),
         "true_cfg_scale": true_cfg_scale,
         "negative_prompt": negative_prompt,
@@ -83,10 +88,11 @@ class ImageEditModel(PythonModel):
       output_image = output.images[0]
 
     # Convert output image to base64
-    output_image_base64 = pillow_image_to_base64_string(output_image)
+    output_image_base64 = self.pillow_image_to_base64_string(output_image)
 
     torch.cuda.empty_cache()
-
-    return pd.DataFrame().from_dict({"output_image": [output_image_base64]})
+    trace_id = mlflow.get_current_active_span().trace_id
+    return pd.DataFrame().from_dict({"output_image": [output_image_base64],
+                                     "trace_id": [trace_id]})
 
 mlflow.models.set_model(ImageEditModel())
