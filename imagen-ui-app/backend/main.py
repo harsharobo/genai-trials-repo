@@ -144,10 +144,11 @@ async def predict(request: ImageRequest,
         # Get model endpoint URL from environment variable
         model_endpoint_url = get_model_endpoint_url()
         # Add authentication token if provided
+        # if x_forwarded_access_token:
+        #     headers["Authorization"] = f"Bearer {x_forwarded_access_token}"
+        # elif auth_token:
         auth_token = os.getenv("MODEL_ENDPOINT_TOKEN")
-        if x_forwarded_access_token:
-            headers["Authorization"] = f"Bearer {x_forwarded_access_token}"
-        elif auth_token:
+        if auth_token:
             headers["Authorization"] = f"Bearer {auth_token}"
 
         logger.info(f"Sending request to model endpoint: {model_endpoint_url}")

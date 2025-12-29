@@ -51,6 +51,8 @@ function App() {
         num_inference_steps: 40,
         true_cfg_scale: 4.0,
         guidance_scale: 1.0
+      }, {
+        timeout: 300000 // 5 minutes
       })
 
       setOutputImage(response.data.output_image)
