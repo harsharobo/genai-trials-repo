@@ -1,11 +1,17 @@
 import { useRef } from 'react'
 import './ImageUploader.css'
 
-function ImageUploader({ label, imagePreview, onImageUpload }) {
-  const fileInputRef = useRef(null)
+interface ImageUploaderProps {
+  label: string
+  imagePreview: string | null
+  onImageUpload: (file: File) => void
+}
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0]
+function ImageUploader({ label, imagePreview, onImageUpload }: ImageUploaderProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
     if (file && file.type.startsWith('image/')) {
       onImageUpload(file)
     } else {
@@ -17,7 +23,7 @@ function ImageUploader({ label, imagePreview, onImageUpload }) {
     fileInputRef.current?.click()
   }
 
-  const handleDrop = (e) => {
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     const file = e.dataTransfer.files[0]
     if (file && file.type.startsWith('image/')) {
@@ -27,7 +33,7 @@ function ImageUploader({ label, imagePreview, onImageUpload }) {
     }
   }
 
-  const handleDragOver = (e) => {
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
   }
 

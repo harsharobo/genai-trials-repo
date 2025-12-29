@@ -1,12 +1,17 @@
 import { useState } from 'react'
 import './FeedbackModal.css'
 
-function FeedbackModal({ onClose, onSubmit }) {
-  const [feedbackType, setFeedbackType] = useState(null)
+interface FeedbackModalProps {
+  onClose: () => void
+  onSubmit: (feedbackData: { feedback_type: string; feedback_text: string | null }) => Promise<void>
+}
+
+function FeedbackModal({ onClose, onSubmit }: FeedbackModalProps) {
+  const [feedbackType, setFeedbackType] = useState<string | null>(null)
   const [feedbackText, setFeedbackText] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!feedbackType) {
@@ -97,7 +102,7 @@ function FeedbackModal({ onClose, onSubmit }) {
               value={feedbackText}
               onChange={(e) => setFeedbackText(e.target.value)}
               placeholder="Tell us more about your experience..."
-              rows="4"
+              rows={4}
             />
           </div>
 

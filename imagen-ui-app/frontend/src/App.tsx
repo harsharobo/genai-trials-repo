@@ -10,18 +10,18 @@ import './App.css'
 const API_URL = process.env.NODE_ENV === 'development' ? '' : ''
 
 function App() {
-  const [image1, setImage1] = useState(null)
-  const [image2, setImage2] = useState(null)
+  const [image1, setImage1] = useState<string | null>(null)
+  const [image2, setImage2] = useState<string | null>(null)
   const [prompt, setPrompt] = useState('')
-  const [outputImage, setOutputImage] = useState(null)
+  const [outputImage, setOutputImage] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<string | null>(null)
   const [showFeedbackModal, setShowFeedbackModal] = useState(false)
 
-  const handleImageUpload = (imageNumber, file) => {
+  const handleImageUpload = (imageNumber: number, file: File) => {
     const reader = new FileReader()
     reader.onloadend = () => {
-      const base64String = reader.result
+      const base64String = reader.result as string
       if (imageNumber === 1) {
         setImage1(base64String)
       } else {
@@ -31,7 +31,7 @@ function App() {
     reader.readAsDataURL(file)
   }
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!image1 || !image2 || !prompt.trim()) {
@@ -56,7 +56,7 @@ function App() {
       setOutputImage(response.data.output_image)
     } catch (err) {
       console.error('Error:', err)
-      setError(err.response?.data?.detail || 'Failed to generate image. Please try again.')
+      setError((err as any).response?.data?.detail || 'Failed to generate image. Please try again.')
     } finally {
       setIsLoading(false)
     }
@@ -70,7 +70,7 @@ function App() {
     setError(null)
   }
 
-  const handleFeedbackSubmit = async (feedbackData) => {
+  const handleFeedbackSubmit = async (feedbackData: { feedback_type: string; feedback_text: string | null }) => {
     try {
       await axios.post(`${API_URL}/api/feedback`, {
         ...feedbackData,
@@ -115,7 +115,7 @@ function App() {
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder="Describe how you want to combine the images..."
-                  rows="4"
+                  rows={4}
                   disabled={isLoading}
                 />
               </div>

@@ -1,6 +1,13 @@
 import './OutputDisplay.css'
 
-function OutputDisplay({ outputImage, prompt, onReset, onFeedback }) {
+interface OutputDisplayProps {
+  outputImage: string
+  prompt: string
+  onReset: () => void
+  onFeedback: () => void
+}
+
+function OutputDisplay({ outputImage, prompt, onReset, onFeedback }: OutputDisplayProps) {
   const handleDownload = () => {
     const link = document.createElement('a')
     link.href = outputImage

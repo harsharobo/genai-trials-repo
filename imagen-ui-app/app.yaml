@@ -1,0 +1,12 @@
+# Databricks App Configuration for Image-to-Image Editor
+command: ["uvicorn", "backend.main:app"]
+
+env:
+  - name: ENV
+    value: production
+  - name: MLFLOW_EXPERIMENT_ID
+    value: "5baa46d003494ecba8f5a8e7b9e9df88"
+  - name: MODEL_ENDPOINT_TOKEN
+    valueFrom: "serving-endpoint-token"
+  - name: MODEL_ENDPOINT_URL
+    valueFrom: "serving-endpoint"

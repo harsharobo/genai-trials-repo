@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import List, Optional, Annotated, Union
 import base64
 import io
 import json
@@ -17,22 +18,21 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Get environment (development or production)
-env = os.getenv("ENV", "development")
-
 app = FastAPI(title="Image-to-Image API")
 
+# Get environment (development or production)
+# env = os.getenv("ENV", "development")
+
 # CORS middleware - only allow localhost in development
-allowed_origins = ["http://localhost:3000", "http://localhost:5173"] if env == "development" else []
+# allowed_origins = ["http://localhost:3000", "http://localhost:5173"] if env == "development" else []
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=allowed_origins,
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 class ImageRequest(BaseModel):
     image1: str  # base64 encoded
@@ -79,7 +79,7 @@ def pil_to_base64(image: Image.Image) -> str:
     try:
         buffered = io.BytesIO()
         image.save(buffered, format="PNG")
-        img_str = base64.b64encode(buffered.getvalue()).decode()
+        img_str = base64.b64encode(buffered.getvalue()).decode("utf-8")
         return f"data:image/png;base64,{img_str}"
     except Exception as e:
         logger.error(f"Error converting PIL to base64: {e}")
@@ -97,7 +97,8 @@ async def health_check():
 
 
 @app.post("/api/predict", response_model=ImageResponse)
-async def predict(request: ImageRequest):
+async def predict(request: ImageRequest,
+                  x_forwarded_access_token: Annotated[Union[str, None], Header(alias="X-Forwarded-Access-Token")] = None):
     """
     Process two images and a prompt using model serving endpoint via REST API.
     Returns the generated image as base64 encoded string.
@@ -106,24 +107,23 @@ async def predict(request: ImageRequest):
         logger.info(f"Received prediction request with prompt: {request.prompt}")
 
         # Extract base64 data (remove data URI prefix if present)
-        img1_b64 = request.image1.split(",")[1] if "," in request.image1 else request.image1
-        img2_b64 = request.image2.split(",")[1] if "," in request.image2 else request.image2
+        img1_b64_data = pil_to_base64(base64_to_pil(request.image1))
+        img1_b64 = img1_b64_data.split(",")[1] 
+        
+        img2_b64_data = pil_to_base64(base64_to_pil(request.image2))
+        img2_b64 = img2_b64_data.split(",")[1] 
 
         logger.info(f"Images received successfully")
 
         # Prepare request payload for the model serving endpoint
         payload = {
-            "inputs": {
+            "dataframe_records": [{
                 "image1": img1_b64,
                 "image2": img2_b64,
-                "prompt": request.prompt,
-                "num_inference_steps": request.num_inference_steps,
-                "true_cfg_scale": request.true_cfg_scale,
-                "guidance_scale": request.guidance_scale
-            }
+                "prompt": request.prompt
+            }]
         }
 
-        # logger.info(f"Payload prepared for model endpoint -->{payload}")
         # Optional: Add authentication headers if required
         headers = {
             "Content-Type": "application/json"
@@ -138,7 +138,9 @@ async def predict(request: ImageRequest):
             )
         # Add authentication token if provided
         auth_token = os.getenv("MODEL_ENDPOINT_TOKEN")
-        if auth_token:
+        if x_forwarded_access_token:
+            headers["Authorization"] = f"Bearer {x_forwarded_access_token}"
+        elif auth_token:
             headers["Authorization"] = f"Bearer {auth_token}"
 
         logger.info(f"Sending request to model endpoint: {model_endpoint_url}")
@@ -158,21 +160,16 @@ async def predict(request: ImageRequest):
 
                 # Extract output image from response
                 # Adjust based on your model endpoint's response format
-                if "output_image" in result:
-                    output_image_b64 = result["output_image"]
-                elif "outputs" in result and "image" in result["outputs"]:
-                    output_image_b64 = result["outputs"]["image"]
-                else:
-                    # Assume the response is the base64 image directly
-                    output_image_b64 = result.get("predictions", [None])[0]
-
-                if not output_image_b64:
+                predictions = result.get("predictions", [None])[0]
+                if not predictions:
                     raise ValueError("No output image found in model response")
 
-                # Validate the output image
+                output_image_b64 = predictions.get("output_image", None)
+                if not output_image_b64:
+                    raise ValueError("No output image found in model response")
+                
                 output_image = base64_to_pil(output_image_b64)
                 output_base64 = pil_to_base64(output_image)
-
                 logger.info("Inference completed successfully")
 
                 return ImageResponse(
@@ -241,17 +238,21 @@ async def submit_feedback(feedback: FeedbackRequest):
             detail=f"Failed to submit feedback: {str(e)}"
         )
 
+# --- Static Files Setup ---
+static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+os.makedirs(static_dir, exist_ok=True)
 
-# Static file serving for production
-# Mount the static files at the root path to serve the React app
-static_path = Path(__file__).parent / "static"
-if static_path.exists():
-    logger.info(f"Serving static files from {static_path}")
-    app.mount("/", StaticFiles(directory=str(static_path), html=True), name="static")
-else:
-    logger.info("Static files directory not found. Run 'npm run build' in frontend directory.")
+app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
 
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+# --- Catch-all for React Routes ---
+@app.get("/{full_path:path}")
+async def serve_react(full_path: str):
+    index_html = os.path.join(static_dir, "index.html")
+    if os.path.exists(index_html):
+        logger.info(f"Serving React frontend for path: /{full_path}")
+        return FileResponse(index_html)
+    logger.error("Frontend not built. index.html missing.")
+    raise HTTPException(
+        status_code=404,
+        detail="Frontend not built. Please run 'npm run build' first."
+    )
