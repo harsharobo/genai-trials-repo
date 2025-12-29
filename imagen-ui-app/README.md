@@ -26,6 +26,13 @@ npm install
 
 ## Development
 
+0. **Setup Environment variables**
+```
+export MODEL_ENDPOINT_URL=qwen_image_edit_model
+export MODEL_ENDPOINT_TOKEN=
+export DATABRICKS_HOST=
+```
+
 1. **Start FastAPI backend:**
 ```bash
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
@@ -50,6 +57,10 @@ uvicorn backend.main:app --host 0.0.0.0 --port 8000
 ## Databricks Apps Deployment
 
 Configured for Databricks Apps with `app.yaml`. Uses `DATABRICKS_APP_PORT` environment variable automatically.
+```
+databricks bundle deploy --profile adb-demo 
+databricks bundle run databricks_ui_app --profile adb-demo
+```
 
 ## API
 
