@@ -14,6 +14,7 @@ from diffusers import QwenImageEditPlusPipeline
 # logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
+@mlflow.trace()
 def base64_string_to_pillow_image(base64_str):
     return Image.open(io.BytesIO(base64.decodebytes(bytes(base64_str, "utf-8"))))
 
@@ -49,6 +50,7 @@ class ImageEditModel(PythonModel):
 
     logger.warning("Qwen Image Edit pipeline loaded successfully")
 
+  @mlflow.trace()
   def predict(self, context, model_input, params):
     input_df = model_input.iloc[0].to_dict()
 

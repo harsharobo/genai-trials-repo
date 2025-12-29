@@ -1,0 +1,58 @@
+# The main job for langgraph_agent.
+resources:
+  jobs:
+    qwen-image-edit-deploy-job:
+      name: qwen_image_model_deploy_workflow
+      email_notifications:
+        on_failure:
+          - ${var.notification_email}
+        no_alert_for_skipped_runs: true
+      notification_settings:
+        no_alert_for_skipped_runs: true
+      tasks:
+        - task_key: register_model
+          job_cluster_key: model_register_job_cluster
+          notebook_task:
+            notebook_path: ../image-image/image-model-register.ipynb
+            base_parameters:
+              environment: ${var.environment_name}
+              schema: ${var.schema_name}
+              catalog: ${var.catalog_name}
+              hf_model_id: "Qwen/Qwen-Image-Edit-2509"
+              model_name: "qwen_image_edit_model"
+              model_alias: "staging"
+
+        - task_key: deploy_model
+          environment_key: default
+          depends_on:
+            - task_key: register_model
+          notebook_task:
+            notebook_path: ../image-image/image-model-deployment.ipynb
+            base_parameters:
+              environment: ${var.environment_name}
+              schema: ${var.schema_name}
+              catalog: ${var.catalog_name}
+              model_name: "qwen_image_edit_model"
+              endpoint_name: "qwen_image_edit_model"
+              model_alias: "staging"
+              mlflow_experiment_id: "3582259051905164"
+              
+      queue:
+        enabled: true
+      job_clusters:
+        - job_cluster_key: model_register_job_cluster
+          new_cluster:
+            spark_version: 17.3.x-scala2.13
+            node_type_id: Standard_NC24ads_A100_v4
+            spark_env_vars:
+              PYSPARK_PYTHON: /databricks/python3/bin/python3
+            data_security_mode: DATA_SECURITY_MODE_DEDICATED
+            runtime_engine: STANDARD
+            kind: CLASSIC_PREVIEW
+            use_ml_runtime: true
+            is_single_node: true
+      environments:
+        - environment_key: default
+          spec:
+            client: "4"
+      # performance_target: STANDARD

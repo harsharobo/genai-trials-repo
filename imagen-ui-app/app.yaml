@@ -5,8 +5,8 @@ env:
   - name: ENV
     value: production
   - name: MLFLOW_EXPERIMENT_ID
-    value: "5baa46d003494ecba8f5a8e7b9e9df88"
+    value: "3582259051905164"
   - name: MODEL_ENDPOINT_TOKEN
-    valueFrom: "serving-endpoint-token"
+    valueFrom: "secret"
   - name: MODEL_ENDPOINT_URL
     valueFrom: "serving-endpoint"
