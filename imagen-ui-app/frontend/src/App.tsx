@@ -31,6 +31,47 @@ function App() {
     reader.readAsDataURL(file)
   }
 
+  const pollJobStatus = async (jobId: string): Promise<void> => {
+    const maxAttempts = 120 // Poll for up to 10 minutes (120 * 5 seconds)
+    let attempts = 0
+
+    const poll = async (): Promise<void> => {
+      try {
+        const response = await axios.get(`${API_URL}/api/predict/status/${jobId}`)
+        const { status, output_image, error } = response.data
+
+        if (status === 'completed') {
+          setOutputImage(output_image)
+          setIsLoading(false)
+          return
+        }
+
+        if (status === 'failed') {
+          setError(error || 'Failed to generate image. Please try again.')
+          setIsLoading(false)
+          return
+        }
+
+        // Job is still pending or processing
+        attempts++
+        if (attempts >= maxAttempts) {
+          setError('Job timed out. Please try again.')
+          setIsLoading(false)
+          return
+        }
+
+        // Poll again after 5 seconds
+        setTimeout(() => poll(), 5000)
+      } catch (err) {
+        console.error('Error polling job status:', err)
+        setError((err as any).response?.data?.detail || 'Failed to check job status. Please try again.')
+        setIsLoading(false)
+      }
+    }
+
+    await poll()
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -44,22 +85,23 @@ function App() {
     setOutputImage(null)
 
     try {
-      const response = await axios.post(`${API_URL}/api/predict`, {
+      // Start the job
+      const response = await axios.post(`${API_URL}/api/predict/start`, {
         image1: image1,
         image2: image2,
         prompt: prompt,
         num_inference_steps: 40,
         true_cfg_scale: 4.0,
         guidance_scale: 1.0
-      }, {
-        timeout: 300000 // 5 minutes
       })
 
-      setOutputImage(response.data.output_image)
+      const { job_id } = response.data
+
+      // Start polling for job status
+      await pollJobStatus(job_id)
     } catch (err) {
       console.error('Error:', err)
-      setError((err as any).response?.data?.detail || 'Failed to generate image. Please try again.')
-    } finally {
+      setError((err as any).response?.data?.detail || 'Failed to start image generation. Please try again.')
       setIsLoading(false)
     }
   }

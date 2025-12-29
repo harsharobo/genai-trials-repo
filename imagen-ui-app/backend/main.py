@@ -1,9 +1,9 @@
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Annotated, Union
+from typing import List, Optional, Annotated, Union, Dict
 import base64
 import io
 import json
@@ -13,12 +13,18 @@ import logging
 from datetime import datetime
 import os
 from pathlib import Path
+import uuid
+import asyncio
+import traceback
 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Image-to-Image API")
+
+# In-memory job storage
+jobs: Dict[str, Dict] = {}
 
 # Get environment (development or production)
 # env = os.getenv("ENV", "development")
@@ -60,6 +66,20 @@ class FeedbackResponse(BaseModel):
     message: str
 
 
+class JobStartResponse(BaseModel):
+    job_id: str
+    status: str
+    message: str
+
+
+class JobStatusResponse(BaseModel):
+    job_id: str
+    status: str  # "pending", "processing", "completed", "failed"
+    output_image: Optional[str] = None
+    error: Optional[str] = None
+    message: str
+
+
 def base64_to_pil(base64_string: str) -> Image.Image:
     """Convert base64 string to PIL Image."""
     try:
@@ -98,6 +118,125 @@ def get_model_endpoint_url() -> str:
     endpoint_url =f"https://{host}/serving-endpoints/{model_endpoint_url}/invocations"
     return endpoint_url
 
+
+async def generate_image_from_endpoint(request: ImageRequest) -> str:
+    """
+    Common function to generate image from model serving endpoint.
+    Returns base64 encoded output image.
+    """
+    try:
+        # Extract base64 data (remove data URI prefix if present)
+        img1_b64_data = pil_to_base64(base64_to_pil(request.image1))
+        img1_b64 = img1_b64_data.split(",")[1]
+
+        img2_b64_data = pil_to_base64(base64_to_pil(request.image2))
+        img2_b64 = img2_b64_data.split(",")[1]
+
+        logger.info("Images processed successfully")
+
+        # Prepare request payload for the model serving endpoint
+        payload = {
+            "dataframe_records": [{
+                "image1": img1_b64,
+                "image2": img2_b64,
+                "prompt": request.prompt
+            }]
+        }
+
+        # Prepare headers
+        headers = {
+            "Content-Type": "application/json"
+        }
+
+        # Get model endpoint URL from environment variable
+        model_endpoint_url = get_model_endpoint_url()
+
+        # Add authentication token if provided
+        auth_token = os.getenv("MODEL_ENDPOINT_TOKEN")
+        if auth_token:
+            headers["Authorization"] = f"Bearer {auth_token}"
+
+        logger.info(f"Sending request to model endpoint: {model_endpoint_url}")
+
+        # Make async HTTP request to model serving endpoint
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(
+                model_endpoint_url,
+                json=payload,
+                headers=headers
+            )
+            response.raise_for_status()
+
+            result = response.json()
+            logger.info("Received response from model endpoint")
+
+            # Extract output image from response
+            predictions = result.get("predictions", [None])[0]
+            if not predictions:
+                raise ValueError("No output image found in model response")
+
+            output_image_b64 = predictions.get("output_image", None)
+            if not output_image_b64:
+                raise ValueError("No output image found in model response")
+
+            output_image = base64_to_pil(output_image_b64)
+            output_base64 = pil_to_base64(output_image)
+            logger.info("Inference completed successfully")
+
+            return output_base64
+
+    except httpx.HTTPStatusError as http_err:
+        logger.error(f"HTTP error from model endpoint: {http_err}")
+        logger.error(f"Response status: {http_err.response.status_code}")
+        logger.error(f"Response body: {http_err.response.text}")
+        logger.error(f"Full stack trace:\n{traceback.format_exc()}")
+        raise
+    except httpx.TimeoutException as timeout_err:
+        logger.error(f"Request to model endpoint timed out: {timeout_err}")
+        logger.error(f"Full stack trace:\n{traceback.format_exc()}")
+        raise
+    except Exception as e:
+        logger.error(f"Error in generate_image_from_endpoint: {e}")
+        logger.error(f"Full stack trace:\n{traceback.format_exc()}")
+        raise
+
+
+async def process_image_job(job_id: str, request: ImageRequest):
+    """Background task to process image generation."""
+    try:
+        logger.info(f"Processing job {job_id} with prompt: {request.prompt}")
+
+        # Update job status to processing
+        jobs[job_id]["status"] = "processing"
+
+        # Use common image generation function
+        output_base64 = await generate_image_from_endpoint(request)
+
+        # Update job with result
+        jobs[job_id]["status"] = "completed"
+        jobs[job_id]["output_image"] = output_base64
+        jobs[job_id]["message"] = "Image generated successfully"
+        logger.info(f"Job {job_id} completed successfully")
+
+    except httpx.HTTPStatusError as http_err:
+        logger.error(f"HTTP error from model endpoint for job {job_id}: {http_err}")
+        logger.error(f"Full stack trace:\n{traceback.format_exc()}")
+        jobs[job_id]["status"] = "failed"
+        jobs[job_id]["error"] = f"Model endpoint error: {str(http_err)}"
+        jobs[job_id]["message"] = "Job failed"
+    except httpx.TimeoutException as timeout_err:
+        logger.error(f"Request to model endpoint timed out for job {job_id}: {timeout_err}")
+        logger.error(f"Full stack trace:\n{traceback.format_exc()}")
+        jobs[job_id]["status"] = "failed"
+        jobs[job_id]["error"] = "Model endpoint request timed out"
+        jobs[job_id]["message"] = "Job failed"
+    except Exception as error:
+        logger.error(f"Error processing job {job_id}: {error}")
+        logger.error(f"Full stack trace:\n{traceback.format_exc()}")
+        jobs[job_id]["status"] = "failed"
+        jobs[job_id]["error"] = str(error)
+        jobs[job_id]["message"] = "Job failed"
+
 @app.get("/api")
 async def root():
     return {"message": "Image-to-Image API is running"}
@@ -106,6 +245,87 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     return {"status": "healthy"}
+
+
+@app.post("/api/predict/start", response_model=JobStartResponse)
+async def start_prediction(request: ImageRequest, background_tasks: BackgroundTasks):
+    """
+    Start an image generation job and return a job ID.
+    Client should poll /api/predict/status/{job_id} to get the result.
+    """
+    try:
+        logger.info(f"Starting new prediction job with prompt: {request.prompt}")
+
+        # Validate inputs
+        if not request.image1 or not request.image2 or not request.prompt.strip():
+            raise HTTPException(status_code=400, detail="Please provide both images and a prompt")
+
+        # Generate unique job ID
+        job_id = str(uuid.uuid4())
+
+        # Initialize job in storage
+        jobs[job_id] = {
+            "job_id": job_id,
+            "status": "pending",
+            "output_image": None,
+            "error": None,
+            "message": "Job created",
+            "created_at": datetime.now().isoformat()
+        }
+
+        # Start background task
+        background_tasks.add_task(process_image_job, job_id, request)
+
+        logger.info(f"Job {job_id} created and queued for processing")
+
+        return JobStartResponse(
+            job_id=job_id,
+            status="pending",
+            message="Job started successfully. Use job_id to poll for status."
+        )
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error starting prediction job: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to start job: {str(e)}")
+
+
+@app.get("/api/predict/status/{job_id}", response_model=JobStatusResponse)
+async def get_job_status(job_id: str):
+    """
+    Poll the status of a prediction job.
+    Returns the job status and result if completed.
+    Job is deleted after retrieval if status is 'completed' or 'failed'.
+    """
+    try:
+        if job_id not in jobs:
+            raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+        job = jobs[job_id]
+        job_status = job["status"]
+
+        response = JobStatusResponse(
+            job_id=job_id,
+            status=job_status,
+            output_image=job.get("output_image"),
+            error=job.get("error"),
+            message=job["message"]
+        )
+
+        # Delete job from memory if completed or failed
+        if job_status in ["completed", "failed"]:
+            del jobs[job_id]
+            logger.info(f"Job {job_id} deleted after retrieval (status: {job_status})")
+
+        return response
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Error retrieving job status: {e}")
+        logger.error(f"Full stack trace:\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve job status: {str(e)}")
 
 
 @app.post("/api/predict", response_model=ImageResponse)
@@ -118,96 +338,33 @@ async def predict(request: ImageRequest,
     try:
         logger.info(f"Received prediction request with prompt: {request.prompt}")
 
-        # Extract base64 data (remove data URI prefix if present)
-        img1_b64_data = pil_to_base64(base64_to_pil(request.image1))
-        img1_b64 = img1_b64_data.split(",")[1] 
-        
-        img2_b64_data = pil_to_base64(base64_to_pil(request.image2))
-        img2_b64 = img2_b64_data.split(",")[1] 
+        # Use common image generation function
+        output_base64 = await generate_image_from_endpoint(request)
 
-        logger.info(f"Images received successfully")
+        return ImageResponse(
+            output_image=output_base64,
+            message="Image generated successfully"
+        )
 
-        # Prepare request payload for the model serving endpoint
-        payload = {
-            "dataframe_records": [{
-                "image1": img1_b64,
-                "image2": img2_b64,
-                "prompt": request.prompt
-            }]
-        }
-
-        # Optional: Add authentication headers if required
-        headers = {
-            "Content-Type": "application/json"
-        }
-
-        # Get model endpoint URL from environment variable
-        model_endpoint_url = get_model_endpoint_url()
-        # Add authentication token if provided
-        # if x_forwarded_access_token:
-        #     headers["Authorization"] = f"Bearer {x_forwarded_access_token}"
-        # elif auth_token:
-        auth_token = os.getenv("MODEL_ENDPOINT_TOKEN")
-        if auth_token:
-            headers["Authorization"] = f"Bearer {auth_token}"
-
-        logger.info(f"Sending request to model endpoint: {model_endpoint_url}")
-
-        # Make async HTTP request to model serving endpoint
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            try:
-                response = await client.post(
-                    model_endpoint_url,
-                    json=payload,
-                    headers=headers
-                )
-                response.raise_for_status()
-
-                result = response.json()
-                logger.info("Received response from model endpoint")
-
-                # Extract output image from response
-                # Adjust based on your model endpoint's response format
-                predictions = result.get("predictions", [None])[0]
-                if not predictions:
-                    raise ValueError("No output image found in model response")
-
-                output_image_b64 = predictions.get("output_image", None)
-                if not output_image_b64:
-                    raise ValueError("No output image found in model response")
-                
-                output_image = base64_to_pil(output_image_b64)
-                output_base64 = pil_to_base64(output_image)
-                logger.info("Inference completed successfully")
-
-                return ImageResponse(
-                    output_image=output_base64,
-                    message="Image generated successfully"
-                )
-
-            except httpx.HTTPStatusError as http_err:
-                logger.error(f"HTTP error from model endpoint: {http_err}")
-                raise HTTPException(
-                    status_code=http_err.response.status_code,
-                    detail=f"Model endpoint error: {str(http_err)}"
-                )
-            except httpx.TimeoutException:
-                logger.error("Request to model endpoint timed out")
-                raise HTTPException(
-                    status_code=504,
-                    detail="Model endpoint request timed out"
-                )
-            except Exception as model_error:
-                logger.error(f"Model inference error: {model_error}")
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Model inference failed: {str(model_error)}"
-                )
-
+    except httpx.HTTPStatusError as http_err:
+        logger.error(f"HTTP error from model endpoint: {http_err}")
+        logger.error(f"Full stack trace:\n{traceback.format_exc()}")
+        raise HTTPException(
+            status_code=http_err.response.status_code,
+            detail=f"Model endpoint error: {str(http_err)}"
+        )
+    except httpx.TimeoutException as timeout_err:
+        logger.error(f"Request to model endpoint timed out: {timeout_err}")
+        logger.error(f"Full stack trace:\n{traceback.format_exc()}")
+        raise HTTPException(
+            status_code=504,
+            detail="Model endpoint request timed out"
+        )
     except HTTPException as he:
         raise he
     except Exception as e:
         logger.error(f"Prediction error: {e}")
+        logger.error(f"Full stack trace:\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
 
 
