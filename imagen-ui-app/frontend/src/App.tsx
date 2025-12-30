@@ -14,6 +14,7 @@ function App() {
   const [image2, setImage2] = useState<string | null>(null)
   const [prompt, setPrompt] = useState('')
   const [outputImage, setOutputImage] = useState<string | null>(null)
+  const [traceId, setTraceId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showFeedbackModal, setShowFeedbackModal] = useState(false)
@@ -38,10 +39,11 @@ function App() {
     const poll = async (): Promise<void> => {
       try {
         const response = await axios.get(`${API_URL}/api/predict/status/${jobId}`)
-        const { status, output_image, error } = response.data
+        const { status, output_image, trace_id, error } = response.data
 
         if (status === 'completed') {
           setOutputImage(output_image)
+          setTraceId(trace_id)
           setIsLoading(false)
           return
         }
@@ -111,13 +113,20 @@ function App() {
     setImage2(null)
     setPrompt('')
     setOutputImage(null)
+    setTraceId(null)
     setError(null)
   }
 
   const handleFeedbackSubmit = async (feedbackData: { feedback_type: string; feedback_text: string | null }) => {
     try {
+      if (!traceId) {
+        alert('Unable to submit feedback: trace_id is missing')
+        return
+      }
+
       await axios.post(`${API_URL}/api/feedback`, {
         ...feedbackData,
+        trace_id: traceId,
         prompt: prompt,
         session_id: Date.now().toString()
       })

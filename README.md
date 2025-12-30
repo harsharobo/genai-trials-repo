@@ -33,3 +33,60 @@ ML model infrastructure and deployment pipelines.
 - User feedback collection and logging
 - MLflow experiment tracking
 - Infrastructure as code with Databricks bundles
+
+## Workflow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         User Interface                          │
+│                    (React + TypeScript)                         │
+└────────────────┬────────────────────────────────────────────────┘
+                 │
+                 │ 1. Upload Image + Prompt
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      FastAPI Backend                            │
+│                    (Async Job Queue)                            │
+└────────────────┬────────────────────────────────────────────────┘
+                 │
+                 │ 2. Base64 Encode & Submit Job
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                 Databricks Model Serving                        │
+│                                                                 │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │
+│  │ Image-to-    │  │ Vision-      │  │ Audio-to-    │        │
+│  │ Image Model  │  │ Language     │  │ Text Model   │        │
+│  │ (Qwen Edit)  │  │ Model (VLM)  │  │ (Whisper)    │        │
+│  └──────────────┘  └──────────────┘  └──────────────┘        │
+│                                                                 │
+│  Powered by: MLflow + GPU Clusters                             │
+└────────────────┬────────────────────────────────────────────────┘
+                 │
+                 │ 3. Model Inference
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Response Processing                          │
+│                                                                 │
+│  • Base64 Decode Image                                         │
+│  • Log to MLflow Experiments                                   │
+│  • Collect User Feedback                                       │
+└────────────────┬────────────────────────────────────────────────┘
+                 │
+                 │ 4. Return Edited Image
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Display Results                              │
+│                  (User Interface)                               │
+└─────────────────────────────────────────────────────────────────┘
+
+Deployment Pipeline:
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│ MLflow Model │───▶│  Databricks  │───▶│ Databricks   │
+│   Wrapper    │    │ Model Registry│    │ App Deploy   │
+└──────────────┘    └──────────────┘    └──────────────┘
+```

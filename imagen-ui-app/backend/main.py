@@ -62,6 +62,7 @@ class ImageRequest(BaseModel):
 
 class ImageResponse(BaseModel):
     output_image: str  # base64 encoded
+    trace_id: str
     message: str
 
 
@@ -88,6 +89,7 @@ class JobStatusResponse(BaseModel):
     job_id: str
     status: str  # "pending", "processing", "completed", "failed"
     output_image: Optional[str] = None
+    trace_id: Optional[str] = None
     error: Optional[str] = None
     message: str
 
@@ -131,10 +133,10 @@ def get_model_endpoint_url() -> str:
     return endpoint_url
 
 
-async def generate_image_from_endpoint(request: ImageRequest) -> str:
+async def generate_image_from_endpoint(request: ImageRequest) -> tuple[str, str]:
     """
     Common function to generate image from model serving endpoint.
-    Returns base64 encoded output image.
+    Returns tuple of (base64 encoded output image, trace_id).
     """
     try:
         # Extract base64 data (remove data URI prefix if present)
@@ -182,7 +184,7 @@ async def generate_image_from_endpoint(request: ImageRequest) -> str:
             result = response.json()
             logger.info("Received response from model endpoint")
 
-            # Extract output image from response
+            # Extract output image and trace_id from response
             predictions = result.get("predictions", [None])[0]
             if not predictions:
                 raise ValueError("No output image found in model response")
@@ -191,11 +193,15 @@ async def generate_image_from_endpoint(request: ImageRequest) -> str:
             if not output_image_b64:
                 raise ValueError("No output image found in model response")
 
+            trace_id = predictions.get("trace_id", None)
+            if not trace_id:
+                raise ValueError("No trace_id found in model response")
+
             output_image = base64_to_pil(output_image_b64)
             output_base64 = pil_to_base64(output_image)
-            logger.info("Inference completed successfully")
+            logger.info(f"Inference completed successfully with trace_id: {trace_id}")
 
-            return output_base64
+            return output_base64, trace_id
 
     except httpx.HTTPStatusError as http_err:
         logger.error(f"HTTP error from model endpoint: {http_err}")
@@ -222,13 +228,14 @@ async def process_image_job(job_id: str, request: ImageRequest):
         jobs[job_id]["status"] = "processing"
 
         # Use common image generation function
-        output_base64 = await generate_image_from_endpoint(request)
+        output_base64, trace_id = await generate_image_from_endpoint(request)
 
         # Update job with result
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["output_image"] = output_base64
+        jobs[job_id]["trace_id"] = trace_id
         jobs[job_id]["message"] = "Image generated successfully"
-        logger.info(f"Job {job_id} completed successfully")
+        logger.info(f"Job {job_id} completed successfully with trace_id: {trace_id}")
 
     except httpx.HTTPStatusError as http_err:
         logger.error(f"HTTP error from model endpoint for job {job_id}: {http_err}")
@@ -280,6 +287,7 @@ async def start_prediction(request: ImageRequest, background_tasks: BackgroundTa
             "job_id": job_id,
             "status": "pending",
             "output_image": None,
+            "trace_id": None,
             "error": None,
             "message": "Job created",
             "created_at": datetime.now().isoformat()
@@ -321,6 +329,7 @@ async def get_job_status(job_id: str):
             job_id=job_id,
             status=job_status,
             output_image=job.get("output_image"),
+            trace_id=job.get("trace_id"),
             error=job.get("error"),
             message=job["message"]
         )
@@ -351,10 +360,11 @@ async def predict(request: ImageRequest,
         logger.info(f"Received prediction request with prompt: {request.prompt}")
 
         # Use common image generation function
-        output_base64 = await generate_image_from_endpoint(request)
+        output_base64, trace_id = await generate_image_from_endpoint(request)
 
         return ImageResponse(
             output_image=output_base64,
+            trace_id=trace_id,
             message="Image generated successfully"
         )
 
@@ -382,7 +392,7 @@ async def predict(request: ImageRequest,
 
 @app.post("/api/feedback", response_model=FeedbackResponse)
 async def submit_feedback(feedback: FeedbackRequest,
-                          x_forwarded_email: Annotated[Union[str, None], Header(alias="X-Forwarded-Email")] = None):
+                          x_forwarded_email: Annotated[Union[str, None], Header(alias="X-Forwarded-Email")] = "someone"):
     """
     Store user feedback (thumbs up/down with optional text).
     """
@@ -400,7 +410,7 @@ async def submit_feedback(feedback: FeedbackRequest,
         # Options: Database, file, MLflow tracking, etc.
         # with open("feedback_log.json", "a") as f:
         #     f.write(json.dumps(feedback_data) + "\n")
-        mlflow.log_trace(
+        mlflow.log_feedback(
             trace_id=feedback.trace_id,
             name="user_feedback",
             value=feedback.feedback_type == "thumbs_up",

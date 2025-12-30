@@ -31,6 +31,7 @@ npm install
 export MODEL_ENDPOINT_URL=qwen_image_edit_model
 export MODEL_ENDPOINT_TOKEN=
 export DATABRICKS_HOST=
+export MLFLOW_EXPERIMENT_ID=3582259051905164
 ```
 
 1. **Start FastAPI backend:**
