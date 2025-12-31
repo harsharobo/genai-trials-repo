@@ -56,13 +56,13 @@ ML model infrastructure and deployment pipelines.
 ┌─────────────────────────────────────────────────────────────────┐
 │                 Databricks Model Serving                        │
 │                                                                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐        │
-│  │ Image-to-    │  │ Vision-      │  │ Audio-to-    │        │
-│  │ Image Model  │  │ Language     │  │ Text Model   │        │
-│  │ (Qwen Edit)  │  │ Model (VLM)  │  │ (Whisper)    │        │
-│  └──────────────┘  └──────────────┘  └──────────────┘        │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐           │
+│  │ Image-to-    │  │ Vision-      │  │ Audio-to-    │           │
+│  │ Image Model  │  │ Language     │  │ Text Model   │           │
+│  │ (Qwen Edit)  │  │ Model (VLM)  │  │ (Whisper)    │           │
+│  └──────────────┘  └──────────────┘  └──────────────┘           │
 │                                                                 │
-│  Powered by: MLflow + GPU Clusters                             │
+│  Powered by: MLflow + GPU Clusters                              │
 └────────────────┬────────────────────────────────────────────────┘
                  │
                  │ 3. Model Inference
@@ -71,9 +71,9 @@ ML model infrastructure and deployment pipelines.
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Response Processing                          │
 │                                                                 │
-│  • Base64 Decode Image                                         │
-│  • Log to MLflow Experiments                                   │
-│  • Collect User Feedback                                       │
+│  • Base64 Decode Image                                          │
+│  • Log to MLflow Experiments                                    │
+│  • Collect User Feedback                                        │
 └────────────────┬────────────────────────────────────────────────┘
                  │
                  │ 4. Return Edited Image
@@ -87,6 +87,6 @@ ML model infrastructure and deployment pipelines.
 Deployment Pipeline:
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
 │ MLflow Model │───▶│  Databricks  │───▶│ Databricks   │
-│   Wrapper    │    │ Model Registry│    │ App Deploy   │
+│   Wrapper    │    │Model Registry│    │ App Deploy   │
 └──────────────┘    └──────────────┘    └──────────────┘
 ```
