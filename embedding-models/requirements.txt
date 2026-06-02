@@ -1,0 +1,28 @@
+# ============================================================
+# Qwen3-Embedding-0.6B Binary Classifier – Runtime Dependencies
+# ============================================================
+# Pin to stable vLLM 0.9.1 (May 2025) and matching dependencies.
+# Install order matters: torch first, then vllm.
+# ============================================================
+
+mlflow[databricks]==3.12.0
+
+# ---- Core ML framework ----
+torch==2.9.1
+torchvision==0.24.1
+torchaudio==2.9.1
+
+# ---- vLLM ----
+vllm==0.15.0
+
+# ---- Embedding fallback (CPU) ----
+sentence-transformers==4.1.0
+transformers>=4.56.0
+huggingface-hub>=0.34.0,<1.0
+hf_transfer==0.1.9
+
+# ---- CUDA-adjacent (already bundled with torch wheels on GPU nodes) ----
+# Uncomment if building from a plain CUDA base image:
+# nvidia-cuda-runtime-cu12
+# nvidia-cublas-cu12
+# nvidia-cudnn-cu12

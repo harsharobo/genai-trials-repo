@@ -1,0 +1,79 @@
+# ============================================================
+# .gitignore – Qwen3 Binary Classifier
+# ============================================================
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.whl
+*.egg
+.eggs/
+site-packages/
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- PyTorch / model weights (may be large; store in MLflow / DBFS) ----
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.gguf
+
+# ---- Jupyter ----
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ---- MLflow local runs ----
+mlruns/
+mlartifacts/
+mlflow.db
+
+# ---- Hugging Face model cache ----
+.cache/
+huggingface/
+
+# ---- vLLM / CUDA caches ----
+__pycache__/
+*.nv_fatbin
+*.cubin
+
+# ---- Databricks CLI / SDK ----
+.databricks/
+.databrickscfg
+bundle.lock
+
+# ---- Environment / secrets ----
+.env
+.env.*
+*.secret
+secrets/
+
+# ---- OS ----
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# ---- IDEs ----
+.vscode/
+.idea/
+*.iml
+
+# ---- Test artefacts ----
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ---- Temporary files ----
+/tmp/
+*.log
+*.tmp
