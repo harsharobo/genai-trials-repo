@@ -1,0 +1,78 @@
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "get the weather and location for city London"
+    }
+  ],
+  "reasoning_effort": "high",
+  "tool_choice": "required",
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "fetch_weather",
+        "description": "Only reached if SchemaValidator + args_validator both pass.\nReturns raw dict; the LLM will use this to produce WeatherReport output.",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "city": {
+              "type": "string"
+            },
+            "unit": {
+              "enum": ["C", "F"],
+              "type": "string"
+            }
+          },
+          "required": ["city", "unit"],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "get_lat_lng",
+        "description": "Get the latitude and longitude of a location.",
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "location_description": {
+              "description": "A description of a location.",
+              "type": "string"
+            }
+          },
+          "required": ["location_description"],
+          "type": "object"
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "weather_report_response",
+        "description": "The final response which ends this conversation",
+        "parameters": {
+          "properties": {
+            "city": {
+              "type": "string"
+            },
+            "temperature": {
+              "type": "number"
+            },
+            "unit": {
+              "enum": ["C", "F"],
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": ["city", "temperature", "unit", "summary"],
+          "type": "object"
+        }
+      }
+    }
+  ],
+  "max_tokens": 4096
+}
